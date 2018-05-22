@@ -58,8 +58,6 @@ typedef struct htsmsg {
 
 typedef struct htsmsg_field {
   TAILQ_ENTRY(htsmsg_field) hmf_link;
-  uint8_t hmf_type;
-  uint8_t hmf_flags;
 
 #define HMF_ALLOCED        0x1
 #define HMF_INALLOCED      0x2
@@ -80,6 +78,8 @@ typedef struct htsmsg_field {
 #if ENABLE_SLOW_MEMORYINFO
   size_t hmf_edata_size;
 #endif
+  uint8_t hmf_type;
+  uint8_t hmf_flags;
   const char hmf_name[0];
 } htsmsg_field_t;
 

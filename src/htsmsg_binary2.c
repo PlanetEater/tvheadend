@@ -95,7 +95,7 @@ htsmsg_binary2_des0(htsmsg_t *msg, const uint8_t *buf, uint32_t len)
 {
   uint_fast32_t type, namelen, datalen;
   const uint8_t *p;
-  uint32_t tlen, nlen;
+  uint32_t tlen, nlen, padding;
   htsmsg_field_t *f;
   htsmsg_t *sub;
   uint64_t u64;
@@ -124,7 +124,8 @@ htsmsg_binary2_des0(htsmsg_t *msg, const uint8_t *buf, uint32_t len)
       if (datalen != UUID_BIN_SIZE)
         return -1;
     }
-    f = malloc(tlen);
+    padding = (4 - ((offsetof(htsmsg_field_t, hmf_name) + nlen) % 4)) % 4;
+    f = malloc(tlen + padding);
     if (f == NULL)
       return -1;
 #if ENABLE_SLOW_MEMORYINFO
@@ -172,7 +173,7 @@ htsmsg_binary2_des0(htsmsg_t *msg, const uint8_t *buf, uint32_t len)
 
     case HMF_MAP:
     case HMF_LIST:
-      sub = f->hmf_msg = (htsmsg_t *)(f->hmf_name + nlen);
+      sub = f->hmf_msg = (htsmsg_t *)(f->hmf_name + nlen + padding);
       TAILQ_INIT(&sub->hm_fields);
       sub->hm_data = NULL;
       sub->hm_data_size = 0;

@@ -130,7 +130,7 @@ struct mpegts_packet
   size_t                      mp_len;
   mpegts_mux_t               *mp_mux;
   uint8_t                     mp_cc_restart;
-  uint8_t                     mp_data[0];
+  uint8_t                     mp_data[0] __attribute__ ((aligned(4)));
 };
 
 struct mpegts_pcr {

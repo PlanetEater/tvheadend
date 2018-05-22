@@ -114,11 +114,12 @@ htsmsg_clear(htsmsg_t *msg)
 htsmsg_field_t *
 htsmsg_field_add(htsmsg_t *msg, const char *name, int type, int flags, size_t esize)
 {
-  size_t nsize;
+  size_t nsize, padding;
   htsmsg_field_t *f;
   
   nsize = name ? strlen(name) + 1 : 1;
-  f = malloc(sizeof(htsmsg_field_t) + nsize + esize);
+  padding = (4 - ((offsetof(htsmsg_field_t, hmf_name) + nsize) % 4)) % 4;
+  f = malloc(offsetof(htsmsg_field_t, hmf_name) + nsize + padding + esize);
   if(f == NULL)
     return NULL;
   TAILQ_INSERT_TAIL(&msg->hm_fields, f, hmf_link);
@@ -136,6 +137,7 @@ htsmsg_field_add(htsmsg_t *msg, const char *name, int type, int flags, size_t es
   }
 
   if(esize) {
+    nsize += padding;
     if(type == HMF_STR) {
       f->hmf_str = f->hmf_name + nsize;
     } else if(type == HMF_UUID) {
