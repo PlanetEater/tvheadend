@@ -27,6 +27,7 @@ DEBUG=False
 BINTRAY_API='https://bintray.com/api/v1'
 BINTRAY_USER=env('BINTRAY_USER')
 BINTRAY_PASS=env('BINTRAY_PASS')
+BINTRAY_REPO=env('BINTRAY_REPO')
 BINTRAY_COMPONENT=env('BINTRAY_COMPONENT')
 BINTRAY_ORG=env('BINTRAY_ORG') or 'tvheadend'
 BINTRAY_PACKAGE='tvheadend'
@@ -102,6 +103,8 @@ def do_upload(*args):
     data = open(file, 'rb').read()
     resp = Bintray(bpath).put(data, binary=1)
     if resp.code != 200 and resp.code != 201:
+        if resp.code == 409:
+            error(0, 'HTTP WARNING "%s" %s %s', resp.url, resp.code, resp.reason)
         error(10, 'HTTP ERROR "%s" %s %s', resp.url, resp.code, resp.reason)
 
 def get_ver(version):
@@ -134,6 +137,7 @@ def get_component(version):
 
 def get_repo(filename, hint=None):
     if hint: return hint
+    if BINTRAY_REPO: return BINTRAY_REPO
     name, ext = os.path.splitext(filename)
     if ext == '.deb':
         return 'deb'
@@ -235,8 +239,8 @@ def do_publish(*args):
         data = open(file, 'rb').read()
         resp = Bintray(bpath).put(data, binary=1)
         if resp.code != 200 and resp.code != 201:
-            error(10, 'File %s: HTTP ERROR "%s" %s',
-                      file, resp.code, resp.reason)
+            error(10, 'File %s (%s): HTTP ERROR "%s" %s',
+                      file, bpath, resp.code, resp.reason)
         else:
             info('File %s: uploaded', file)
 

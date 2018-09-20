@@ -283,7 +283,7 @@ dvb_get_string
     *dst = 0; // empty string (confirmed!)
     return 0;
 
-  case 0x01 ... 0x0b:
+  case 0x01 ... 0x0b: /* ISO 8859-X */
     if (auto_pl_charset && (src[0] + 4) == 5)
       ic = convert_iso6937;
     else
@@ -291,11 +291,11 @@ dvb_get_string
     src++; srclen--;
     break;
 
-  case 0x0c ... 0x0f:
+  case 0x0c ... 0x0f: /* reserved for the future use */
     src++; srclen--;
     break;
 
-  case 0x10: /* Table A.4 */
+  case 0x10: /* ISO 8859 - Table A.4 */
     if(srclen < 3 || src[1] != 0 || src[2] == 0 || src[2] > 0x0f)
       return -1;
 
@@ -303,33 +303,38 @@ dvb_get_string
     src+=3; srclen-=3;
     break;
     
-  case 0x11:
+  case 0x11: /* ISO 10646 */
     ic = convert_ucs2;
     src++; srclen--;
     break;
 
-  case 0x13:
+  case 0x12: /* KSX1001-2004 - Korean Character Set - NYI! */
+    src++; srclen--;
+    break;
+
+  case 0x13: /* GB-2312-1980 */
     ic = convert_gb;
     src++; srclen--;
     break;
 
-  case 0x12:
-    src++; srclen--;
-    break;
-
-  case 0x14:
+  case 0x14: /* Big5 subset of ISO 10646 */
     ic = convert_ucs2;
     src++; srclen--;
     break;
 
-  case 0x15:
+  case 0x15: /* UTF-8 */
     ic = convert_utf8;
     src++; srclen--;
     break;
 
-  case 0x16 ... 0x1f:
+  case 0x16 ... 0x1e: /* reserved for the future use */
     src++; srclen--;
     break;
+
+  case 0x1f: /* Described by encoding_type_id, TS 101 162 */
+    if (srclen < 1)
+      return -1;
+    return -1; /* NYI */
 
   default:
     if (auto_pl_charset)
@@ -655,7 +660,7 @@ static int dvb_verify(int val, int *table)
 
 const char *dvb_rolloff2str(int p)
 {
-  static char __thread buf[16];
+  static __thread char buf[16];
   const char *res = dvb_common2str(p);
   if (res)
     return res;
@@ -677,12 +682,13 @@ int dvb_str2rolloff(const char *p)
   return dvb_verify(atoi(p) * 10, rolloff_table);
 }
 
-const static struct strtab delsystab[] = {
+static const struct strtab delsystab[] = {
   { "NONE",         DVB_SYS_NONE },
   { "DVB-C",        DVB_SYS_DVBC_ANNEX_A },
   { "DVBC/ANNEX_A", DVB_SYS_DVBC_ANNEX_A },
   { "DVBC_ANNEX_A", DVB_SYS_DVBC_ANNEX_A },
   { "ATSC-C",       DVB_SYS_DVBC_ANNEX_B },
+  { "CableCARD",    DVB_SYS_DVBC_ANNEX_B },
   { "DVBC/ANNEX_B", DVB_SYS_DVBC_ANNEX_B },
   { "DVBC_ANNEX_B", DVB_SYS_DVBC_ANNEX_B },
   { "DVB-C/ANNEX-C",DVB_SYS_DVBC_ANNEX_C },
@@ -738,6 +744,8 @@ dvb_delsys2type ( mpegts_network_t *ln, dvb_fe_delivery_system_t delsys )
     case DVB_SYS_DVBC_ANNEX_B:
       if (ln && idnode_is_instance(&ln->mn_id, &dvb_network_dvbc_class))
         return DVB_TYPE_C;
+      if (ln && idnode_is_instance(&ln->mn_id, &dvb_network_cablecard_class))
+        return DVB_TYPE_CABLECARD;
       else
         return DVB_TYPE_ATSC_C;
     case DVB_SYS_ISDBT:
@@ -757,7 +765,7 @@ dvb_delsys2type ( mpegts_network_t *ln, dvb_fe_delivery_system_t delsys )
 
 const char *dvb_fec2str(int p)
 {
-  static char __thread buf[16];
+  static __thread char buf[16];
   const char *res = dvb_common2str(p);
   if (res)
     return res;
@@ -813,7 +821,7 @@ int dvb_str2fec(const char *p)
   return dvb_verify(hi * 100 + lo, fec_table);
 }
 
-const static struct strtab qamtab[] = {
+static const struct strtab qamtab[] = {
   { "NONE",      DVB_MOD_NONE },
   { "AUTO",      DVB_MOD_AUTO },
   { "QPSK",      DVB_MOD_QPSK },
@@ -855,7 +863,7 @@ dvb_str2val(qam);
 
 const char *dvb_bw2str(int p)
 {
-  static char __thread buf[17];
+  static __thread char buf[17];
   const char *res = dvb_common2str(p);
   if (res)
     return res;
@@ -889,7 +897,7 @@ int dvb_str2bw(const char *p)
   return dvb_verify(hi, bw_table);
 }
 
-const static struct strtab invertab[] = {
+static const struct strtab invertab[] = {
   { "NONE",  DVB_INVERSION_UNDEFINED },
   { "AUTO",  DVB_INVERSION_AUTO },
   { "ON",    DVB_INVERSION_ON },
@@ -897,7 +905,7 @@ const static struct strtab invertab[] = {
 };
 dvb_str2val(inver);
 
-const static struct strtab modetab[] = {
+static const struct strtab modetab[] = {
   { "NONE",  DVB_TRANSMISSION_MODE_NONE },
   { "AUTO",  DVB_TRANSMISSION_MODE_AUTO },
   { "1k",    DVB_TRANSMISSION_MODE_1K },
@@ -911,7 +919,7 @@ const static struct strtab modetab[] = {
 };
 dvb_str2val(mode);
 
-const static struct strtab guardtab[] = {
+static const struct strtab guardtab[] = {
   { "NONE",   DVB_GUARD_INTERVAL_NONE },
   { "AUTO",   DVB_GUARD_INTERVAL_AUTO },
   { "1/4",    DVB_GUARD_INTERVAL_1_4 },
@@ -927,7 +935,7 @@ const static struct strtab guardtab[] = {
 };
 dvb_str2val(guard);
 
-const static struct strtab hiertab[] = {
+static const struct strtab hiertab[] = {
   { "NONE", DVB_HIERARCHY_NONE },
   { "AUTO", DVB_HIERARCHY_AUTO },
   { "1",    DVB_HIERARCHY_1 },
@@ -936,7 +944,7 @@ const static struct strtab hiertab[] = {
 };
 dvb_str2val(hier);
 
-const static struct strtab poltab[] = {
+static const struct strtab poltab[] = {
   { "V", DVB_POLARISATION_VERTICAL },
   { "H", DVB_POLARISATION_HORIZONTAL },
   { "L", DVB_POLARISATION_CIRCULAR_LEFT },
@@ -945,29 +953,30 @@ const static struct strtab poltab[] = {
 };
 dvb_str2val(pol);
 
-const static struct strtab typetab[] = {
-  {"DVB-T",  DVB_TYPE_T},
-  {"DVB-C",  DVB_TYPE_C},
-  {"DVB-S",  DVB_TYPE_S},
-  {"ATSC-T", DVB_TYPE_ATSC_T},
-  {"ATSC-C", DVB_TYPE_ATSC_C},
-  {"ISDB-T", DVB_TYPE_ISDB_T},
-  {"ISDB-C", DVB_TYPE_ISDB_C},
-  {"ISDB-S", DVB_TYPE_ISDB_S},
-  {"DAB",    DVB_TYPE_DAB},
-  {"DVBT",   DVB_TYPE_T},
-  {"DVBC",   DVB_TYPE_C},
-  {"DVBS",   DVB_TYPE_S},
-  {"ATSC",   DVB_TYPE_ATSC_T},
-  {"ATSCT",  DVB_TYPE_ATSC_T},
-  {"ATSCC",  DVB_TYPE_ATSC_C},
-  {"ISDBT",  DVB_TYPE_ISDB_T},
-  {"ISDBC",  DVB_TYPE_ISDB_C},
-  {"ISDBS",  DVB_TYPE_ISDB_S}
+static const struct strtab typetab[] = {
+  {"DVB-T",     DVB_TYPE_T},
+  {"DVB-C",     DVB_TYPE_C},
+  {"DVB-S",     DVB_TYPE_S},
+  {"ATSC-T",    DVB_TYPE_ATSC_T},
+  {"ATSC-C",    DVB_TYPE_ATSC_C},
+  {"CableCARD", DVB_TYPE_CABLECARD},
+  {"ISDB-T",    DVB_TYPE_ISDB_T},
+  {"ISDB-C",    DVB_TYPE_ISDB_C},
+  {"ISDB-S",    DVB_TYPE_ISDB_S},
+  {"DAB",       DVB_TYPE_DAB},
+  {"DVBT",      DVB_TYPE_T},
+  {"DVBC",      DVB_TYPE_C},
+  {"DVBS",      DVB_TYPE_S},
+  {"ATSC",      DVB_TYPE_ATSC_T},
+  {"ATSCT",     DVB_TYPE_ATSC_T},
+  {"ATSCC",     DVB_TYPE_ATSC_C},
+  {"ISDBT",     DVB_TYPE_ISDB_T},
+  {"ISDBC",     DVB_TYPE_ISDB_C},
+  {"ISDBS",     DVB_TYPE_ISDB_S}
 };
 dvb_str2val(type);
 
-const static struct strtab pilottab[] = {
+static const struct strtab pilottab[] = {
   {"NONE", DVB_PILOT_NONE},
   {"AUTO", DVB_PILOT_AUTO},
   {"ON",   DVB_PILOT_ON},
@@ -975,7 +984,7 @@ const static struct strtab pilottab[] = {
 };
 dvb_str2val(pilot);
 
-const static struct strtab plsmodetab[] = {
+static const struct strtab plsmodetab[] = {
   {"ROOT", DVB_PLS_ROOT},
   {"GOLD", DVB_PLS_GOLD},
   {"COMBO", DVB_PLS_COMBO},
@@ -1082,6 +1091,14 @@ dvb_mux_conf_str_atsc_t ( dvb_mux_conf_t *dmc, char *buf, size_t bufsize )
 }
 
 static int
+dvb_mux_conf_str_cablecard(dvb_mux_conf_t *dmc, char *buf, size_t bufsize)
+{
+  return snprintf(buf, bufsize, "%s channel %u",
+      dvb_type2str(dmc->dmc_fe_type),
+      dmc->u.dmc_fe_cablecard.vchannel);
+}
+
+static int
 dvb_mux_conf_str_isdb_t ( dvb_mux_conf_t *dmc, char *buf, size_t bufsize )
 {
   char hp[16];
@@ -1124,6 +1141,8 @@ dvb_mux_conf_str ( dvb_mux_conf_t *dmc, char *buf, size_t bufsize )
     return dvb_mux_conf_str_dvbs(dmc, buf, bufsize);
   case DVB_TYPE_ATSC_T:
     return dvb_mux_conf_str_atsc_t(dmc, buf, bufsize);
+  case DVB_TYPE_CABLECARD:
+    return dvb_mux_conf_str_cablecard(dmc, buf, bufsize);
   case DVB_TYPE_ISDB_T:
     return dvb_mux_conf_str_isdb_t(dmc, buf, bufsize);
   default:
@@ -1146,7 +1165,7 @@ dvb_sat_position_to_str(int position, char *buf, size_t buflen)
   return buf;
 }
 
-const int
+int
 dvb_sat_position_from_str( const char *buf )
 {
   const char *s = buf;

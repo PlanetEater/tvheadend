@@ -348,9 +348,11 @@ const idclass_t profile_class =
     {
       .type     = PT_INT,
       .id       = "timeout",
-      .name     = N_("Timeout (sec) (0=infinite)"),
-      .desc     = N_("The number of seconds to wait for a stream to "
-                     "start."),
+      .name     = N_("Data timeout (sec) (0=infinite)"),
+      .desc     = N_("The number of seconds to wait for data. "
+                     "It handles the situations where no data "
+                     "are received at start or the input stream "
+                     "is stalled."),
       .off      = offsetof(profile_t, pro_timeout),
       .def.i    = 5,
       .group    = 1
@@ -1101,7 +1103,7 @@ profile_chain_raw_open(profile_chain_t *prch, void *id, size_t qsize, int muxer)
  *
  */
 
-const static int prio2weight[] = {
+static const int prio2weight[] = {
   [PROFILE_SPRIO_DVR_IMPORTANT]   = 525,
   [PROFILE_SPRIO_DVR_HIGH]        = 425,
   [PROFILE_SPRIO_DVR_NORMAL]      = 325,

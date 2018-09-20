@@ -527,6 +527,7 @@ makeapkt(parser_t *t, parser_es_t *st, const void *buf,
 
   pkt->pkt_commercial = t->prs_tt_commercial_advice;
   pkt->pkt_duration = duration;
+  pkt->a.pkt_keyframe = 1;
   pkt->a.pkt_channels = channels;
   pkt->a.pkt_sri = sri;
   pkt->pkt_err = st->es_buf_a.sb_err;
@@ -726,7 +727,7 @@ parse_aac(parser_t *t, parser_es_t *st, const uint8_t *data,
 /**
  * MPEG layer 1/2/3 parser
  */
-const static int mpa_br[2][3][16] = {
+static const int mpa_br[2][3][16] = {
 {
   {0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 0},
   {0, 32, 48, 56,  64,  80,  96, 112, 128, 160, 192, 224, 256, 320, 384, 0},
@@ -739,8 +740,8 @@ const static int mpa_br[2][3][16] = {
 }
 };
 
-const static int mpa_sr[4]  = {44100, 48000, 32000, 0};
-const static int mpa_sri[4] = {4,     3,     5,     0};
+static const int mpa_sr[4]  = {44100, 48000, 32000, 0};
+static const int mpa_sri[4] = {4,     3,     5,     0};
 
 static inline int
 mpa_valid_frame(uint32_t h)
@@ -850,9 +851,9 @@ static void parse_pes_mpa(parser_t *t, parser_es_t *st,
 /**
  * (E)AC3 audio parser
  */
-const static int ac3_freq_tab[4] = {48000, 44100, 32000, 0};
+static const int ac3_freq_tab[4] = {48000, 44100, 32000, 0};
 
-const static uint16_t ac3_frame_size_tab[38][3] = {
+static const uint16_t ac3_frame_size_tab[38][3] = {
     { 64,   69,   96   },
     { 64,   70,   96   },
     { 80,   87,   120  },
@@ -1192,14 +1193,19 @@ drop_trailing_zeroes(const uint8_t *buf, size_t len)
  *
  */
 static void
-parser_global_data_move(parser_es_t *st, const uint8_t *data, size_t len)
+parser_global_data_move(parser_es_t *st, const uint8_t *data, size_t len, int reset)
 {
-  int len2 = drop_trailing_zeroes(data, len);
-
-  st->es_global_data = realloc(st->es_global_data,
-                               st->es_global_data_len + len2);
-  memcpy(st->es_global_data + st->es_global_data_len, data, len2);
-  st->es_global_data_len += len2;
+  if (reset) {
+    free(st->es_global_data);
+    st->es_global_data = NULL;
+    st->es_global_data_len = 0;
+  } else {
+    int len2 = drop_trailing_zeroes(data, len);
+    st->es_global_data = realloc(st->es_global_data,
+                                 st->es_global_data_len + len2);
+    memcpy(st->es_global_data + st->es_global_data_len, data, len2);
+    st->es_global_data_len += len2;
+  }
 
   st->es_buf.sb_ptr -= len;
 }
@@ -1269,7 +1275,7 @@ parse_mpeg2video(parser_t *t, parser_es_t *st, size_t len,
     if(!st->es_buf.sb_err) {
       if(parse_mpeg2video_seq_start(t, st, &bs) != PARSER_APPEND)
         return PARSER_RESET;
-      parser_global_data_move(st, buf, len);
+      parser_global_data_move(st, buf, len, 0);
       if (!st->es_priv)
         st->es_priv = malloc(1); /* starting mark */
     }
@@ -1282,12 +1288,12 @@ parse_mpeg2video(parser_t *t, parser_es_t *st, size_t len,
     case 0x1:
       // Sequence Extension
       if(!st->es_buf.sb_err)
-        parser_global_data_move(st, buf, len);
+        parser_global_data_move(st, buf, len, 0);
       return PARSER_DROP;
     case 0x2:
       // Sequence Display Extension
       if(!st->es_buf.sb_err)
-        parser_global_data_move(st, buf, len);
+        parser_global_data_move(st, buf, len, 0);
       return PARSER_DROP;
     }
     break;
@@ -1344,7 +1350,7 @@ parse_mpeg2video(parser_t *t, parser_es_t *st, size_t len,
   case 0xb8:
     // GOP header
     if(!st->es_buf.sb_err)
-      parser_global_data_move(st, buf, len);
+      parser_global_data_move(st, buf, len, 0);
     return PARSER_DROP;
 
   case 0xb2:
@@ -1512,9 +1518,9 @@ parse_h264(parser_t *t, parser_es_t *st, size_t len,
     case H264_NAL_SPS:
       if(!st->es_buf.sb_err) {
         void *f = h264_nal_deescape(&bs, buf + 4, len - 4);
-        h264_decode_seq_parameter_set(st, &bs);
+        int r = h264_decode_seq_parameter_set(st, &bs);
         free(f);
-        parser_global_data_move(st, buf, len);
+        parser_global_data_move(st, buf, len, r);
       }
       ret = PARSER_DROP;
       break;
@@ -1522,9 +1528,9 @@ parse_h264(parser_t *t, parser_es_t *st, size_t len,
     case H264_NAL_PPS:
       if(!st->es_buf.sb_err) {
         void *f = h264_nal_deescape(&bs, buf + 4, len - 4);
-        h264_decode_pic_parameter_set(st, &bs);
+        int r = h264_decode_pic_parameter_set(st, &bs);
         free(f);
-        parser_global_data_move(st, buf, len);
+        parser_global_data_move(st, buf, len, r);
       }
       ret = PARSER_DROP;
       break;
@@ -1686,9 +1692,9 @@ parse_hevc(parser_t *t, parser_es_t *st, size_t len,
   case HEVC_NAL_VPS:
     if(!st->es_buf.sb_err) {
       void *f = h264_nal_deescape(&bs, buf + 3, len - 3);
-      hevc_decode_vps(st, &bs);
+      int r = hevc_decode_vps(st, &bs);
       free(f);
-      parser_global_data_move(st, buf, len);
+      parser_global_data_move(st, buf, len, r);
     }
     ret = PARSER_DROP;
     break;
@@ -1696,9 +1702,9 @@ parse_hevc(parser_t *t, parser_es_t *st, size_t len,
   case HEVC_NAL_SPS:
     if(!st->es_buf.sb_err) {
       void *f = h264_nal_deescape(&bs, buf + 3, len - 3);
-      hevc_decode_sps(st, &bs);
+      int r = hevc_decode_sps(st, &bs);
       free(f);
-      parser_global_data_move(st, buf, len);
+      parser_global_data_move(st, buf, len, r);
     }
     ret = PARSER_DROP;
     break;
@@ -1706,9 +1712,9 @@ parse_hevc(parser_t *t, parser_es_t *st, size_t len,
   case HEVC_NAL_PPS:
     if(!st->es_buf.sb_err) {
       void *f = h264_nal_deescape(&bs, buf + 3, len - 3);
-      hevc_decode_pps(st, &bs);
+      int r = hevc_decode_pps(st, &bs);
       free(f);
-      parser_global_data_move(st, buf, len);
+      parser_global_data_move(st, buf, len, r);
     }
     ret = PARSER_DROP;
     break;
@@ -1718,7 +1724,7 @@ parse_hevc(parser_t *t, parser_es_t *st, size_t len,
   case HEVC_NAL_SEI_SUFFIX:
     if(!st->es_buf.sb_err) {
       /* FIXME: only declarative messages */
-      parser_global_data_move(st, buf, len);
+      parser_global_data_move(st, buf, len, 0);
     }
     ret = PARSER_DROP;
     break;

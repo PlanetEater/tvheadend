@@ -292,14 +292,16 @@ http_stream_status ( void *opaque, htsmsg_t *m )
 {
   http_connection_t *hc = opaque;
   char buf[128];
+  const char *username;
 
   htsmsg_add_str(m, "type", "HTTP");
   if (hc->hc_proxy_ip) {
     tcp_get_str_from_ip(hc->hc_proxy_ip, buf, sizeof(buf));
     htsmsg_add_str(m, "proxy", buf);
   }
-  if (hc->hc_username)
-    htsmsg_add_str(m, "user", hc->hc_username);
+  username = http_username(hc);
+  if (username)
+    htsmsg_add_str(m, "user", username);
 }
 
 static inline void *
@@ -1070,7 +1072,7 @@ http_stream_service(http_connection_t *hc, service_t *service, int weight)
                                          prch.prch_flags | SUBSCRIPTION_STREAMING |
                                            eflags,
                                          hc->hc_peer_ipstr,
-				         hc->hc_username,
+				         http_username(hc),
 				         http_arg_get(&hc->hc_args, "User-Agent"),
 				         NULL);
     if(s) {
@@ -1147,7 +1149,7 @@ http_stream_mux(http_connection_t *hc, mpegts_mux_t *mm, int weight)
     s = subscription_create_from_mux(&prch, NULL, weight ?: 10, "HTTP",
                                      prch.prch_flags |
                                      SUBSCRIPTION_STREAMING,
-                                     hc->hc_peer_ipstr, hc->hc_username,
+                                     hc->hc_peer_ipstr, http_username(hc),
                                      http_arg_get(&hc->hc_args, "User-Agent"),
                                      NULL);
     if (s) {
@@ -1211,7 +1213,7 @@ http_stream_channel(http_connection_t *hc, channel_t *ch, int weight)
     s = subscription_create_from_channel(&prch,
                  NULL, weight, "HTTP",
                  prch.prch_flags | SUBSCRIPTION_STREAMING,
-                 hc->hc_peer_ipstr, hc->hc_username,
+                 hc->hc_peer_ipstr, http_username(hc),
                  http_arg_get(&hc->hc_args, "User-Agent"),
                  NULL);
 
@@ -1471,7 +1473,7 @@ http_serve_file(http_connection_t *hc, const char *fname,
 #if defined(PLATFORM_LINUX)
   ssize_t r;
 #elif defined(PLATFORM_FREEBSD) || defined(PLATFORM_DARWIN)
-  off_t r;
+  off_t o, r;
 #endif
   
   if (fconv) {
@@ -1535,6 +1537,7 @@ http_serve_file(http_connection_t *hc, const char *fname,
   sprintf(range_buf, "bytes %jd-%jd/%jd",
           file_start, file_end, (intmax_t)st.st_size);
 
+#if defined(PLATFORM_LINUX)
   if(file_start > 0) {
     off_t off;
     if ((off = lseek(fd, file_start, SEEK_SET)) != file_start) {
@@ -1544,6 +1547,9 @@ http_serve_file(http_connection_t *hc, const char *fname,
       return HTTP_STATUS_INTERNAL;
     }
   }
+#elif defined(PLATFORM_FREEBSD) || defined(PLATFORM_DARWIN)
+  o = file_start;
+#endif
 
   if (preop) {
     ret = preop(hc, file_start, content_len, opaque);
@@ -1564,16 +1570,22 @@ http_serve_file(http_connection_t *hc, const char *fname,
       chunk = MIN(1024 * ((stats ? 128 : 1024) * 1024), content_len);
 #if defined(PLATFORM_LINUX)
       r = sendfile(hc->hc_fd, fd, NULL, chunk);
-#elif defined(PLATFORM_FREEBSD)
-      sendfile(fd, hc->hc_fd, 0, chunk, NULL, &r, 0);
-#elif defined(PLATFORM_DARWIN)
-      r = chunk;
-      sendfile(fd, hc->hc_fd, 0, &r, NULL, 0);
-#endif
-      if(r < 0) {
+      if (r < 0) {
         ret = -1;
         break;
       }
+#elif defined(PLATFORM_FREEBSD)
+      ret = sendfile(fd, hc->hc_fd, o, chunk, NULL, &r, 0);
+      if (ret < 0)
+        break;
+      o += r;
+#elif defined(PLATFORM_DARWIN)
+      r = chunk;
+      ret = sendfile(fd, hc->hc_fd, o, &r, NULL, 0);
+      if (ret < 0)
+        break;
+      o += r;
+#endif
       content_len -= r;
       if (stats)
         stats(hc, r, opaque);
@@ -1610,7 +1622,7 @@ page_dvrfile_preop(http_connection_t *hc, off_t file_start,
   if (priv->tcp_id && !hc->hc_no_output && content_len > 64*1024) {
     priv->sub = subscription_create_from_file("HTTP", priv->charset,
                                               priv->fname, hc->hc_peer_ipstr,
-                                              hc->hc_username,
+                                              http_username(hc),
                                               http_arg_get(&hc->hc_args, "User-Agent"));
     if (priv->sub == NULL) {
       http_stream_postop(priv->tcp_id);

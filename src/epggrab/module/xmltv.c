@@ -61,8 +61,7 @@ static time_t _xmltv_str2time(const char *in)
 
   memset(&tm, 0, sizeof(tm));
   tm.tm_mday = 1;               /* Day is one-based not zero-based */
-  strncpy(str, in, sizeof(str));
-  str[sizeof(str)-1] = '\0';
+  strlcpy(str, in, sizeof(str));
 
   /* split tz */
   while (str[sp] && str[sp] != ' ' && str[sp] != '+' && str[sp] != '-')
@@ -115,13 +114,13 @@ static time_t _xmltv_str2time(const char *in)
  * made, or episode X out of Y episodes in this series, or part X of a
  * Y-part episode.  If any of these aren't known they can be omitted.
  * You can put spaces whereever you like to make things easier to read.
- * 
+ *
  * (NB 'part number' is not used when a whole programme is split in two
  * for purely scheduling reasons; it's intended for cases where there
  * really is a 'Part One' and 'Part Two'.  The format doesn't currently
  * have a way to represent a whole programme that happens to be split
  * across two or more timeslots.)
- * 
+ *
  * Some examples will make things clearer.  The first episode of the
  * second series is '1.0.0/1' .  If it were a two-part episode, then the
  * first half would be '1.0.0/2' and the second half '1.0.1/2'.  If you
@@ -201,7 +200,7 @@ static void parse_xmltv_dd_progid
 {
   char buf[128];
   if (strlen(s) < 2) return;
-  
+
   /* Raw URI */
   snprintf(buf, sizeof(buf)-1, "ddprogid://%s/%s", mod->id, s);
 
@@ -242,7 +241,7 @@ static void get_episode_info
        (cdata = htsmsg_get_str(c, "cdata")) == NULL ||
        (sys = htsmsg_get_str(a, "system")) == NULL)
       continue;
-    
+
     if(!strcmp(sys, "onscreen"))
       epnum->text = (char*)cdata;
     else if(!strcmp(sys, "xmltv_ns"))
@@ -311,7 +310,7 @@ xmltv_parse_vid_quality
   }
   if (lines)
     save |= epg_broadcast_set_lines(ebc, lines, changes);
-  
+
   return save;
 }
 
@@ -319,7 +318,7 @@ xmltv_parse_vid_quality
  * Parse accessibility data
  */
 int
-xmltv_parse_accessibility 
+xmltv_parse_accessibility
   ( epg_broadcast_t *ebc, htsmsg_t *m, epg_changes_t *changes )
 {
   int save = 0;
@@ -376,8 +375,7 @@ static int _xmltv_parse_date_finished
       const size_t len = strlen(str);
       if (len >= 4) {
           char year_buf[32];
-          strncpy(year_buf, str, 4);
-          year_buf[5] = 0;
+          strlcpy(year_buf, str, 5);
           const int64_t year = atoll(year_buf);
           /* Sanity check the year before copying it over. */
           if (year > 1800 && year < 2500) {
@@ -597,11 +595,46 @@ _xmltv_parse_credits(htsmsg_t **out_credits, htsmsg_t *tags)
   return credits_names;
 }
 
+/*
+ * Convert the string list to a human-readable csv and append
+ * it to the desc with a prefix of name.
+ */
+static void
+xmltv_appendit(lang_str_t **_desc, string_list_t *list,
+               const char *name, lang_str_t *summary)
+{
+  lang_str_t *desc, *lstr;
+  lang_str_ele_t *e;
+  const char *s;
+  if (!list) return;
+  char *str = string_list_2_csv(list, ',', 1);
+  if (!str) return;
+  desc = NULL;
+  lstr = *_desc ?: summary;
+  if (lstr) {
+    RB_FOREACH(e, lstr, link) {
+      if (!desc) desc = lang_str_create();
+      s = *_desc ? lang_str_get_only(*_desc, e->lang) : NULL;
+      if (s) {
+        lang_str_append(desc, s, e->lang);
+        lang_str_append(desc, "\n\n", e->lang);
+      }
+      lang_str_append(desc, tvh_gettext_lang(e->lang, name), e->lang);
+      lang_str_append(desc, str, e->lang);
+    }
+  }
+  free(str);
+  if (desc) {
+    lang_str_destroy(*_desc);
+    *_desc = desc;
+  }
+}
+
 /**
  * Parse tags inside of a programme
  */
 static int _xmltv_parse_programme_tags
-  (epggrab_module_t *mod, channel_t *ch, htsmsg_t *tags, 
+  (epggrab_module_t *mod, channel_t *ch, htsmsg_t *tags,
    time_t start, time_t stop, const char *icon,
    epggrab_stats_t *stats)
 {
@@ -637,8 +670,9 @@ static int _xmltv_parse_programme_tags
   if (save && (changes & EPG_CHANGED_CREATE))
     stats->broadcasts.created++;
 
-  /* Description (wait for episode first) */
+  /* Description/summary (wait for episode first) */
   _xmltv_parse_lang_str(&desc, tags, "desc");
+  _xmltv_parse_lang_str(&summary, tags, "summary");
 
   /* If user has requested it then retrieve additional information
    * from programme such as credits and keywords.
@@ -656,29 +690,16 @@ static int _xmltv_parse_programme_tags
     if (scrape_extra && keyword)
       save |= epg_broadcast_set_keyword(ebc, keyword, &changes);
 
-    /* Convert the string list VAR to a human-readable csv and append
-     * it to the desc with a prefix of NAME.
-     */
-#define APPENDIT(VAR,NAME) \
-    if (VAR) { \
-      char *str = string_list_2_csv(VAR, ',', 1); \
-      if (str) {                                  \
-        lang_str_append(desc, "\n\n", NULL);      \
-        lang_str_append(desc, NAME, NULL);        \
-        lang_str_append(desc, str, NULL);         \
-        free(str);                                \
-      }                                           \
-    }
 
     /* Append the details on to the description, mainly for legacy
      * clients. This allow you to view the details in the description
      * on old boxes/tablets that don't parse the newer fields or
      * don't display them.
      */
-    if (desc && scrape_onto_desc) {
-      APPENDIT(credits_names, N_("Credits: "));
-      APPENDIT(category, N_("Categories: "));
-      APPENDIT(keyword, N_("Keywords: "));
+    if (scrape_onto_desc) {
+      xmltv_appendit(&desc, credits_names, N_("Credits: "), summary);
+      xmltv_appendit(&desc, category, N_("Categories: "), summary);
+      xmltv_appendit(&desc, keyword, N_("Keywords: "), summary);
     }
 
     if (credits)          htsmsg_destroy(credits);
@@ -693,7 +714,6 @@ static int _xmltv_parse_programme_tags
     save |= epg_broadcast_set_description(ebc, desc, &changes);
 
   /* summary */
-  _xmltv_parse_lang_str(&summary, tags, "summary");
   if (summary)
     save |= epg_broadcast_set_summary(ebc, summary, &changes);
 
@@ -865,7 +885,6 @@ static int _xmltv_parse_channel
   ch->laststamp = gclk();
   stats->channels.total++;
   if (save) stats->channels.created++;
-  
   dnames = htsmsg_create_list();
 
   HTSMSG_FOREACH(f, tags) {

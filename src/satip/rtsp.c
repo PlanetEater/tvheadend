@@ -686,7 +686,7 @@ rtsp_start
                                    "SAT>IP",
                                    rs->prch.prch_flags |
                                    SUBSCRIPTION_STREAMING,
-                                   addrbuf, hc->hc_username,
+                                   addrbuf, http_username(hc),
                                    http_arg_get(&hc->hc_args, "User-Agent"),
                                    NULL);
     if (!rs->subs)
@@ -1596,8 +1596,7 @@ rtsp_process_teardown(http_connection_t *hc)
     pthread_mutex_unlock(&rtsp_lock);
     http_error(hc, !rs ? HTTP_STATUS_BAD_SESSION : HTTP_STATUS_NOT_FOUND);
   } else {
-    strncpy(session, rs->session, sizeof(session));
-    session[sizeof(session)-1] = '\0';
+    strlcpy(session, rs->session, sizeof(session));
     rtsp_close_session(rs);
     rtsp_free_session(rs);
     pthread_mutex_unlock(&rtsp_lock);
@@ -1665,6 +1664,7 @@ rtsp_stream_status ( void *opaque, htsmsg_t *m )
 {
   http_connection_t *hc = opaque;
   char buf[128];
+  const char *username;
   struct session *rs = NULL;
   htsmsg_t *c, *tcp = NULL, *udp = NULL;
   int udpport, s32;
@@ -1674,8 +1674,9 @@ rtsp_stream_status ( void *opaque, htsmsg_t *m )
     tcp_get_str_from_ip(hc->hc_proxy_ip, buf, sizeof(buf));
     htsmsg_add_str(m, "proxy", buf);
   }
-  if (hc->hc_username)
-    htsmsg_add_str(m, "user", hc->hc_username);
+  username = http_username(hc);
+  if (username)
+    htsmsg_add_str(m, "user", username);
 
   TAILQ_FOREACH(rs, &rtsp_sessions, link) {
     if (hc->hc_session &&

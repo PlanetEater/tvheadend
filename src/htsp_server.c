@@ -65,7 +65,7 @@
 
 static void *htsp_server, *htsp_server_2;
 
-#define HTSP_PROTO_VERSION 32
+#define HTSP_PROTO_VERSION 33
 
 #define HTSP_ASYNC_OFF  0x00
 #define HTSP_ASYNC_ON   0x01
@@ -1106,6 +1106,9 @@ htsp_build_dvrentry(htsp_connection_t *htsp, dvr_entry_t *de, const char *method
     s = "invalid";
     break;
   }
+
+  if (dvr_entry_is_upcoming(de))
+    htsmsg_add_u32(out, "duplicate", dvr_entry_is_upcoming_nodup(de) ? 0 : 1);
 
   htsmsg_add_str(out, "state", s);
   if(error)
@@ -3948,7 +3951,7 @@ htsp_event_delete(epg_broadcast_t *ebc)
   htsp_async_send(m, HTSP_ASYNC_EPG, HTSP_ASYNC_AUX_EPG, ebc);
 }
 
-const static char frametypearray[PKT_NTYPES] = {
+static const char frametypearray[PKT_NTYPES] = {
   [PKT_I_FRAME] = 'I',
   [PKT_P_FRAME] = 'P',
   [PKT_B_FRAME] = 'B',

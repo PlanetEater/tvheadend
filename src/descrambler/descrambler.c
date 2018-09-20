@@ -426,7 +426,7 @@ void
 descrambler_service_stop ( service_t *t )
 {
   th_descrambler_t *td;
-  th_descrambler_runtime_t *dr = t->s_descramble;
+  th_descrambler_runtime_t *dr;
   th_descrambler_key_t *tk;
   th_descrambler_data_t *dd;
   void *p;
@@ -435,6 +435,7 @@ descrambler_service_stop ( service_t *t )
   while ((td = LIST_FIRST(&t->s_descramblers)) != NULL)
     td->td_stop(td);
   pthread_mutex_lock(&t->s_stream_mutex);
+  dr = t->s_descramble;
   t->s_descramble = NULL;
   t->s_descrambler = NULL;
   p = t->s_descramble_info;
@@ -471,21 +472,22 @@ descrambler_notify_deliver( mpegts_service_t *t, descramble_info_t *di )
   int r;
 
   lock_assert(&t->s_stream_mutex);
-  if (!t->s_descramble_info)
+  if (!t->s_descramble_info) {
     t->s_descramble_info = calloc(1, sizeof(*di));
-  r = memcmp(t->s_descramble_info, di, sizeof(*di));
-  if (r == 0) { /* identical */
-    free(di);
-    return;
+  } else {
+    r = memcmp(t->s_descramble_info, di, sizeof(*di));
+    if (r == 0) { /* identical */
+      free(di);
+      return;
+    }
   }
   memcpy(t->s_descramble_info, di, sizeof(*di));
 
-  sm = streaming_msg_create(SMT_DESCRAMBLE_INFO);
-  sm->sm_data = di;
-
+  sm = streaming_msg_create_data(SMT_DESCRAMBLE_INFO, di);
   streaming_service_deliver((service_t *)t, sm);
 }
 
+/* it's called inside s_stream_mutex lock! */
 static void
 descrambler_notify_nokey( th_descrambler_runtime_t *dr )
 {
@@ -495,8 +497,8 @@ descrambler_notify_nokey( th_descrambler_runtime_t *dr )
   tvhdebug(LS_DESCRAMBLER, "no key for service='%s'", t->s_dvb_svcname);
 
   di = calloc(1, sizeof(*di));
-  di->pid = t->s_components.set_pmt_pid;
 
+  di->pid = t->s_components.set_pmt_pid;
   descrambler_notify_deliver(t, di);
 }
 
@@ -527,10 +529,10 @@ descrambler_notify( th_descrambler_t *td,
   di->provid  = provid;
   di->ecmtime = ecmtime;
   di->hops    = hops;
-  strncpy(di->cardsystem, cardsystem, sizeof(di->cardsystem)-1);
-  strncpy(di->reader, reader, sizeof(di->reader)-1);
-  strncpy(di->from, from, sizeof(di->protocol)-1);
-  strncpy(di->protocol, protocol, sizeof(di->protocol)-1);
+  strlcpy(di->cardsystem, cardsystem, sizeof(di->cardsystem));
+  strlcpy(di->reader, reader, sizeof(di->reader));
+  strlcpy(di->from, from, sizeof(di->protocol));
+  strlcpy(di->protocol, protocol, sizeof(di->protocol));
 
   pthread_mutex_lock(&t->s_stream_mutex);
   descrambler_notify_deliver(t, di);

@@ -454,8 +454,11 @@ tcp_socket_dead(int fd)
   if (err)
     return -err;
 #ifdef PLATFORM_FREEBSD
-  if (recv(fd, NULL, 0, MSG_PEEK | MSG_DONTWAIT) < 0)
+  err = recv(fd, NULL, 0, MSG_PEEK | MSG_DONTWAIT);
+  if (err < 0)
     return -errno;
+  else if (err == 0)
+      return -EIO;
 #else
   if (recv(fd, NULL, 0, MSG_PEEK | MSG_DONTWAIT) == 0)
     return -EIO;
@@ -481,7 +484,7 @@ tcp_get_str_from_ip(const struct sockaddr_storage *sa, char *dst, size_t maxlen)
       inet_ntop(AF_INET6, &(((struct sockaddr_in6*)sa)->sin6_addr), dst, maxlen);
       break;
     default:
-      strncpy(dst, "Unknown AF", maxlen);
+      strlcpy(dst, "Unknown AF", maxlen);
       return NULL;
   }
 
